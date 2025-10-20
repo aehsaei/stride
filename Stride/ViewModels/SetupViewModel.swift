@@ -7,14 +7,16 @@ class SetupViewModel: ObservableObject {
     // MARK: - Published Properties
 
     // Biometric inputs
-    @Published var heightValue: Double = 170
-    @Published var heightUnit: HeightUnit = .cm
-    @Published var weightValue: Double = 70
-    @Published var weightUnit: WeightUnit = .kg
+    @Published var heightFeet: Int = 5
+    @Published var heightInches: Int = 9
+    @Published var heightUnit: HeightUnit = .ftIn
+    @Published var weightValue: Double = 155
+    @Published var weightUnit: WeightUnit = .lbs
 
-    // Speed inputs
-    @Published var targetSpeedValue: Double = 6.0
-    @Published var speedUnit: SpeedUnit = .mph
+    // Pace inputs (minutes per distance)
+    @Published var targetPaceMinutes: Double = 10.0  // Default: 10:00 min/mile
+    @Published var targetPaceSeconds: Double = 0.0
+    @Published var paceUnit: PaceUnit = .minPerMi
 
     // Metronome settings
     @Published var cueMode: CueMode = .everyStep
@@ -28,21 +30,37 @@ class SetupViewModel: ObservableObject {
     @Published var suggestedCadence: Double = 0
 
     // Services
-    private let healthService: HealthServiceProtocol
+    private lazy var healthService: HealthServiceProtocol = HealthService()
     private let cadenceModel = CadenceModel()
 
     // MARK: - Computed Properties
 
     var heightInMeters: Double {
-        heightUnit.toMeters(heightValue)
+        let decimalFeet = HeightUnit.inchesToFeet(heightFeet, heightInches)
+        return heightUnit.toMeters(decimalFeet)
     }
 
     var weightInKg: Double {
         weightUnit.toKilograms(weightValue)
     }
 
+    var targetPaceInMinutes: Double {
+        targetPaceMinutes + (targetPaceSeconds / 60.0)
+    }
+
     var targetSpeedMps: Double {
-        speedUnit.toMetersPerSecond(targetSpeedValue)
+        // Convert pace (min/distance) to speed (m/s)
+        let totalMinutes = targetPaceInMinutes
+        guard totalMinutes > 0 else { return 3.0 } // Default fallback
+
+        switch paceUnit {
+        case .minPerKm:
+            // If pace is X min/km, speed is 1000m / (X * 60s)
+            return 1000.0 / (totalMinutes * 60.0)
+        case .minPerMi:
+            // If pace is X min/mile, speed is 1609.344m / (X * 60s)
+            return 1609.344 / (totalMinutes * 60.0)
+        }
     }
 
     var biometric: Biometric {
@@ -51,8 +69,7 @@ class SetupViewModel: ObservableObject {
 
     // MARK: - Initialization
 
-    init(healthService: HealthServiceProtocol = HealthService()) {
-        self.healthService = healthService
+    init() {
         updateSuggestedCadence()
     }
 
@@ -65,7 +82,10 @@ class SetupViewModel: ObservableObject {
             try await healthService.requestPermission()
 
             if let height = try await healthService.readHeight() {
-                heightValue = heightUnit.fromMeters(height)
+                let decimalFeet = heightUnit.fromMeters(height)
+                let components = HeightUnit.feetToComponents(decimalFeet)
+                heightFeet = components.feet
+                heightInches = components.inches
             }
 
             if let weight = try await healthService.readWeight() {
@@ -90,7 +110,7 @@ class SetupViewModel: ObservableObject {
         updateSuggestedCadence()
     }
 
-    func onSpeedChanged() {
+    func onPaceChanged() {
         updateSuggestedCadence()
     }
 
@@ -103,7 +123,10 @@ class SetupViewModel: ObservableObject {
     func convertHeightUnit(to newUnit: HeightUnit) {
         let meters = heightInMeters
         heightUnit = newUnit
-        heightValue = newUnit.fromMeters(meters)
+        let decimalFeet = newUnit.fromMeters(meters)
+        let components = HeightUnit.feetToComponents(decimalFeet)
+        heightFeet = components.feet
+        heightInches = components.inches
     }
 
     func convertWeightUnit(to newUnit: WeightUnit) {
@@ -112,9 +135,11 @@ class SetupViewModel: ObservableObject {
         weightValue = newUnit.fromKilograms(kg)
     }
 
-    func convertSpeedUnit(to newUnit: SpeedUnit) {
+    func convertPaceUnit(to newUnit: PaceUnit) {
         let mps = targetSpeedMps
-        speedUnit = newUnit
-        targetSpeedValue = newUnit.fromMetersPerSecond(mps)
+        paceUnit = newUnit
+        let totalMinutes = newUnit.fromMetersPerSecond(mps)
+        targetPaceMinutes = floor(totalMinutes)
+        targetPaceSeconds = (totalMinutes - targetPaceMinutes) * 60.0
     }
 }

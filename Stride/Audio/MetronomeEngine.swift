@@ -70,9 +70,12 @@ class MetronomeEngine: ObservableObject {
         setupHaptics()
     }
 
-    deinit {
-        stop()
-        engine.stop()
+    nonisolated deinit {
+        // Note: Cannot call @MainActor methods from deinit
+        // Timer and audio cleanup happens when object is deallocated
+        if engine.isRunning {
+            engine.stop()
+        }
     }
 
     // MARK: - Setup
@@ -114,9 +117,12 @@ class MetronomeEngine: ObservableObject {
             isPlaying = true
             beatCounter = 0
 
-            // Start scheduling loop
+            // Start scheduling loop - schedule based on actual BPM
+            let effectiveBPM = bpm / cueMode.divisor
+            let beatInterval = 60.0 / effectiveBPM
+
             scheduleBeats()
-            scheduleTimer = Timer.scheduledTimer(withTimeInterval: minScheduleInterval, repeats: true) { [weak self] _ in
+            scheduleTimer = Timer.scheduledTimer(withTimeInterval: beatInterval, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     self?.scheduleBeats()
                 }
@@ -135,11 +141,21 @@ class MetronomeEngine: ObservableObject {
     }
 
     func setBPM(_ bpm: Double) {
-        // Apply phase-aligned BPM change
-        // For PoC, we simply update target and let next schedule pick it up
-        // A more sophisticated approach would calculate phase offset
         targetBPM = bpm
         currentBPM = bpm
+
+        // Restart timer with new interval
+        if isPlaying {
+            scheduleTimer?.invalidate()
+            let effectiveBPM = bpm / cueMode.divisor
+            let beatInterval = 60.0 / effectiveBPM
+
+            scheduleTimer = Timer.scheduledTimer(withTimeInterval: beatInterval, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    self?.scheduleBeats()
+                }
+            }
+        }
     }
 
     func setCueMode(_ mode: CueMode) {
@@ -159,14 +175,13 @@ class MetronomeEngine: ObservableObject {
     // MARK: - Audio Loading
 
     private func loadSound(soundSet: SoundSet) {
-        // For PoC, we'll generate a simple click sound programmatically
-        // In production, load from bundle: Bundle.main.url(forResource: soundSet.fileName, withExtension: nil)
-        audioBuffer = generateClickBuffer()
+        // Generate different sounds based on sound set
+        audioBuffer = generateClickBuffer(for: soundSet)
     }
 
-    private func generateClickBuffer() -> AVAudioPCMBuffer? {
+    private func generateClickBuffer(for soundSet: SoundSet) -> AVAudioPCMBuffer? {
         let sampleRate = 44100.0
-        let duration = 0.01  // 10ms click
+        let duration = 0.05  // 50ms click (longer and more audible)
         let frameCount = AVAudioFrameCount(sampleRate * duration)
 
         guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2),
@@ -176,18 +191,53 @@ class MetronomeEngine: ObservableObject {
 
         buffer.frameLength = frameCount
 
-        // Generate short impulse with decay (simple click sound)
         guard let leftChannel = buffer.floatChannelData?[0],
               let rightChannel = buffer.floatChannelData?[1] else {
             return nil
         }
 
-        for i in 0..<Int(frameCount) {
-            let t = Double(i) / sampleRate
-            let envelope = exp(-t * 400.0)  // Exponential decay
-            let sample = Float(sin(2.0 * .pi * 1000.0 * t) * envelope)
-            leftChannel[i] = sample * 0.5
-            rightChannel[i] = sample * 0.5
+        switch soundSet {
+        case .click:
+            // High-pitched click (800Hz sine with fast decay)
+            for i in 0..<Int(frameCount) {
+                let t = Double(i) / sampleRate
+                let envelope = exp(-t * 100.0)
+                let sineWave = sin(2.0 * Double.pi * 800.0 * t)
+                let sample = Float(sineWave * envelope)
+                leftChannel[i] = sample * 0.8
+                rightChannel[i] = sample * 0.8
+            }
+
+        case .woodblock:
+            // Lower, more resonant tone (400Hz + 800Hz harmonics with medium decay)
+            for i in 0..<Int(frameCount) {
+                let t = Double(i) / sampleRate
+                let envelope = exp(-t * 60.0)  // Slower decay for woodblock resonance
+                // Mix fundamental and harmonic
+                let fundamental = sin(2.0 * Double.pi * 400.0 * t)
+                let harmonic = sin(2.0 * Double.pi * 800.0 * t) * 0.5
+                let mixed = fundamental + harmonic
+                let sample = Float(mixed * envelope)
+                leftChannel[i] = sample * 0.7
+                rightChannel[i] = sample * 0.7
+            }
+
+        case .hiHat:
+            // Noise-based hi-hat sound with high-pass characteristic
+            for i in 0..<Int(frameCount) {
+                let t = Double(i) / sampleRate
+                let envelope = exp(-t * 150.0)  // Fast decay for hi-hat
+                // Generate white noise and filter it
+                let noise = Double(Float.random(in: -1.0...1.0))
+                // Mix with high frequency tone for metallic quality
+                let tone = sin(2.0 * Double.pi * 3000.0 * t)
+                let noisePart = noise * 0.7
+                let tonePart = tone * 0.3
+                let mixed = noisePart + tonePart
+                let sample = Float(mixed * envelope)
+                leftChannel[i] = sample * 0.6
+                rightChannel[i] = sample * 0.6
+            }
         }
 
         return buffer
@@ -198,33 +248,12 @@ class MetronomeEngine: ObservableObject {
     private func scheduleBeats() {
         guard isPlaying, let buffer = audioBuffer else { return }
 
-        let bpm = targetBPM / cueMode.divisor
-        guard bpm > 0 else { return }
+        // Simply play the buffer - the timer controls the rhythm
+        playerNode.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
 
-        let beatInterval = 60.0 / bpm
-
-        // Calculate how many beats to schedule based on current player time
-        let currentTime = playerNode.lastRenderTime?.sampleTime ?? 0
-        let sampleRate = engine.mainMixerNode.outputFormat(forBus: 0).sampleRate
-
-        var scheduleTime = AVAudioTime(sampleTime: currentTime, atRate: sampleRate)
-
-        // Schedule multiple beats ahead
-        let beatsToSchedule = Int(scheduleAheadTime / beatInterval) + 1
-
-        for i in 0..<beatsToSchedule {
-            let offset = beatInterval * Double(i)
-            let time = AVAudioTime(
-                sampleTime: currentTime + AVAudioFramePosition(offset * sampleRate),
-                atRate: sampleRate
-            )
-
-            playerNode.scheduleBuffer(buffer, at: time, options: [], completionHandler: nil)
-
-            // Trigger haptics if enabled (approximation, not sample-accurate)
-            if enableHaptics && i == 0 {
-                triggerHaptic()
-            }
+        // Trigger haptics if enabled
+        if enableHaptics {
+            triggerHaptic()
         }
     }
 

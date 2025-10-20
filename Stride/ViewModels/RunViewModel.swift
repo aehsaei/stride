@@ -12,10 +12,10 @@ class RunViewModel: ObservableObject {
     @Published var targetCadence: Double = 0
     @Published var actualCadence: Double? = nil
 
-    @Published var targetSpeedValue: Double
-    @Published var speedUnit: SpeedUnit
+    @Published var targetPaceMinutes: Double
+    @Published var targetPaceSeconds: Double
+    @Published var paceUnit: PaceUnit
 
-    @Published var paceSource: PaceSource = .manual
     @Published var currentSpeedMps: Double = 0
 
     @Published var cueMode: CueMode
@@ -25,7 +25,6 @@ class RunViewModel: ObservableObject {
     // MARK: - Dependencies
 
     private let metronome: MetronomeEngine
-    private let locationService: any LocationServiceProtocol
     private let motionService: any MotionServiceProtocol
     private let cadenceModel = CadenceModel()
 
@@ -37,12 +36,28 @@ class RunViewModel: ObservableObject {
 
     // MARK: - Computed Properties
 
+    var targetPaceInMinutes: Double {
+        targetPaceMinutes + (targetPaceSeconds / 60.0)
+    }
+
     var targetSpeedMps: Double {
-        speedUnit.toMetersPerSecond(targetSpeedValue)
+        // Convert pace (min/distance) to speed (m/s)
+        let totalMinutes = targetPaceInMinutes
+        guard totalMinutes > 0 else { return 3.0 }
+
+        switch paceUnit {
+        case .minPerKm:
+            return 1000.0 / (totalMinutes * 60.0)
+        case .minPerMi:
+            return 1609.344 / (totalMinutes * 60.0)
+        }
+    }
+
+    var currentPace: Double {
+        return paceUnit.fromMetersPerSecond(currentSpeedMps)
     }
 
     var displayPace: String {
-        let paceUnit: PaceUnit = speedUnit == .mph ? .minPerMi : .minPerKm
         let pace = paceUnit.fromMetersPerSecond(currentSpeedMps)
         return paceUnit.formatPace(pace)
     }
@@ -58,39 +73,30 @@ class RunViewModel: ObservableObject {
 
     init(
         biometric: Biometric,
-        targetSpeedValue: Double,
-        speedUnit: SpeedUnit,
+        targetPaceMinutes: Double,
+        targetPaceSeconds: Double,
+        paceUnit: PaceUnit,
         cueMode: CueMode,
         soundSet: SoundSet,
         enableHaptics: Bool,
         personalizationDelta: Double,
-        metronome: MetronomeEngine = MetronomeEngine(),
-        locationService: any LocationServiceProtocol = LocationService(),
-        motionService: any MotionServiceProtocol = MotionService()
+        metronome: MetronomeEngine? = nil,
+        motionService: (any MotionServiceProtocol)? = nil
     ) {
         self.biometric = biometric
-        self.targetSpeedValue = targetSpeedValue
-        self.speedUnit = speedUnit
+        self.targetPaceMinutes = targetPaceMinutes
+        self.targetPaceSeconds = targetPaceSeconds
+        self.paceUnit = paceUnit
         self.cueMode = cueMode
         self.soundSet = soundSet
         self.enableHaptics = enableHaptics
         self.personalizationDelta = personalizationDelta
-        self.metronome = metronome
-        self.locationService = locationService
-        self.motionService = motionService
+        self.metronome = metronome ?? MetronomeEngine()
+        self.motionService = motionService ?? MotionService()
 
         // Calculate initial cadence
         updateTargetCadence()
         currentSpeedMps = targetSpeedMps
-
-        // Subscribe to location updates if using GPS
-        if let locationService = locationService as? LocationService {
-            locationService.$currentSpeedMps
-                .sink { [weak self] speed in
-                    self?.onLocationSpeedUpdated(speed)
-                }
-                .store(in: &cancellables)
-        }
 
         // Subscribe to motion updates for actual cadence
         if let motionService = motionService as? MotionService {
@@ -107,12 +113,7 @@ class RunViewModel: ObservableObject {
     func startRun() {
         isRunning = true
 
-        // Start services
-        if paceSource == .gps {
-            locationService.requestPermission()
-            locationService.startUpdatingLocation()
-        }
-
+        // Start motion service
         if motionService.isAvailable {
             motionService.requestPermission()
             motionService.startTracking()
@@ -147,23 +148,36 @@ class RunViewModel: ObservableObject {
     func endRun() {
         isRunning = false
         metronome.stop()
-        locationService.stopUpdatingLocation()
         motionService.stopTracking()
     }
 
-    // MARK: - Speed Adjustments
+    // MARK: - Pace Adjustments
 
-    func increaseSpeed() {
-        targetSpeedValue += 0.5
-        onSpeedChanged()
+    func increasePace() {
+        // Increase pace means slower = more time per distance
+        targetPaceSeconds += 15
+        if targetPaceSeconds >= 60 {
+            targetPaceMinutes += 1
+            targetPaceSeconds = 0
+        }
+        onPaceChanged()
     }
 
-    func decreaseSpeed() {
-        targetSpeedValue = max(1.0, targetSpeedValue - 0.5)
-        onSpeedChanged()
+    func decreasePace() {
+        // Decrease pace means faster = less time per distance
+        if targetPaceSeconds >= 15 {
+            targetPaceSeconds -= 15
+        } else if targetPaceMinutes > 5 {
+            targetPaceMinutes -= 1
+            targetPaceSeconds = 45
+        } else {
+            targetPaceSeconds = max(0, targetPaceSeconds - 15)
+        }
+        onPaceChanged()
     }
 
-    func onSpeedChanged() {
+    func onPaceChanged() {
+        currentSpeedMps = targetSpeedMps
         updateTargetCadence()
 
         if isRunning {
@@ -176,17 +190,6 @@ class RunViewModel: ObservableObject {
                     self.currentBPM = self.targetCadence
                 }
             }
-        }
-    }
-
-    func togglePaceSource() {
-        paceSource = paceSource == .manual ? .gps : .manual
-
-        if paceSource == .gps && isRunning {
-            locationService.startUpdatingLocation()
-        } else if paceSource == .manual {
-            locationService.stopUpdatingLocation()
-            currentSpeedMps = targetSpeedMps
         }
     }
 
@@ -216,30 +219,10 @@ class RunViewModel: ObservableObject {
     // MARK: - Private Helpers
 
     private func updateTargetCadence() {
-        let speed = paceSource == .gps ? currentSpeedMps : targetSpeedMps
         targetCadence = cadenceModel.suggestedCadence(
             biometric: biometric,
-            speedMps: speed,
+            speedMps: targetSpeedMps,
             personalizationDelta: personalizationDelta
         )
-    }
-
-    private func onLocationSpeedUpdated(_ speed: Double) {
-        guard paceSource == .gps, speed > 0 else { return }
-
-        currentSpeedMps = speed
-
-        // Debounce cadence updates to avoid jitter (2-5s)
-        debounceTimer?.invalidate()
-        debounceTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            Task { @MainActor in
-                self.updateTargetCadence()
-                if self.isRunning {
-                    self.metronome.setBPM(self.targetCadence)
-                    self.currentBPM = self.targetCadence
-                }
-            }
-        }
     }
 }

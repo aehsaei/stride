@@ -53,7 +53,7 @@ struct CadenceModel {
         cadence = min(max(cadence, config.minCadence), config.maxCadence)
 
         // Stride length sanity check: stride = speed * 60 / cadence (in meters)
-        var strideLength = speedMps * 60.0 / cadence
+        let strideLength = speedMps * 60.0 / cadence
 
         // Nudge cadence if stride is unrealistic for leg length
         if strideLength < config.strideLenLowerFactor * legLen {

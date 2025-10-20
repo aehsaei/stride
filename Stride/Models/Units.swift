@@ -60,7 +60,7 @@ enum PaceUnit: String, CaseIterable, Identifiable {
 
 enum HeightUnit: String, CaseIterable, Identifiable {
     case cm = "cm"
-    case inches = "in"
+    case ftIn = "ft/in"
 
     var id: String { rawValue }
 
@@ -68,8 +68,9 @@ enum HeightUnit: String, CaseIterable, Identifiable {
         switch self {
         case .cm:
             return value / 100.0
-        case .inches:
-            return value * 0.0254
+        case .ftIn:
+            // Value is stored as decimal feet (e.g., 5.75 = 5'9")
+            return value * 0.3048
         }
     }
 
@@ -77,9 +78,23 @@ enum HeightUnit: String, CaseIterable, Identifiable {
         switch self {
         case .cm:
             return meters * 100.0
-        case .inches:
-            return meters / 0.0254
+        case .ftIn:
+            // Convert to decimal feet
+            return meters / 0.3048
         }
+    }
+
+    /// Convert total inches to decimal feet for internal storage
+    static func inchesToFeet(_ feet: Int, _ inches: Int) -> Double {
+        return Double(feet) + (Double(inches) / 12.0)
+    }
+
+    /// Convert decimal feet to feet and inches for display
+    static func feetToComponents(_ decimalFeet: Double) -> (feet: Int, inches: Int) {
+        let totalInches = decimalFeet * 12.0
+        let feet = Int(totalInches / 12.0)
+        let inches = Int(totalInches.truncatingRemainder(dividingBy: 12.0))
+        return (feet, inches)
     }
 }
 

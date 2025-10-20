@@ -3,6 +3,7 @@ import CoreMotion
 import Combine
 
 /// Protocol for motion/pedometer services (enables mocking)
+@MainActor
 protocol MotionServiceProtocol {
     var currentCadence: Double? { get }
     var isAvailable: Bool { get }

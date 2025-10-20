@@ -4,33 +4,36 @@ struct RunView: View {
     @StateObject private var viewModel: RunViewModel
     @Environment(\.dismiss) private var dismiss
 
-    init(viewModel: RunViewModel) {
+    nonisolated init(viewModel: RunViewModel) {
         _viewModel = StateObject(wrappedValue: viewModel)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Main cadence display
-            mainCadenceDisplay
-                .frame(maxHeight: .infinity)
+        ZStack {
+            Color(uiColor: .systemGroupedBackground)
+                .ignoresSafeArea()
 
-            Divider()
+            ScrollView {
+                VStack(spacing: 32) {
+                    // Main cadence display
+                    mainCadenceDisplay
 
-            // Controls section
-            controlsSection
+                    // Controls section
+                    controlsSection
+                }
                 .padding()
-                .background(Color(uiColor: .systemGroupedBackground))
+            }
         }
         .navigationTitle("Running")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("End Run") {
+                Button("End") {
                     viewModel.endRun()
                     dismiss()
                 }
                 .foregroundColor(.red)
-                .accessibilityLabel("End run and return to setup")
+                .fontWeight(.semibold)
             }
         }
         .onAppear {
@@ -47,71 +50,76 @@ struct RunView: View {
     // MARK: - Main Display
 
     private var mainCadenceDisplay: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
+        VStack(spacing: 24) {
             // Target cadence (large display)
-            VStack(spacing: 8) {
-                Text("TARGET CADENCE")
-                    .font(.caption)
-                    .fontWeight(.semibold)
+            VStack(spacing: 12) {
+                Text("\(Int(viewModel.targetCadence))")
+                    .font(.system(size: 96, weight: .bold, design: .rounded))
+                    .foregroundColor(.accentColor)
+                    .contentTransition(.numericText())
+
+                Text("steps per minute")
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
-
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(Int(viewModel.targetCadence))")
-                        .font(.system(size: 80, weight: .bold, design: .rounded))
-                        .foregroundColor(.accentColor)
-                        .contentTransition(.numericText())
-
-                    Text("spm")
-                        .font(.system(size: 24, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Target cadence: \(Int(viewModel.targetCadence)) steps per minute")
+                    .textCase(.uppercase)
             }
-
-            // Actual cadence comparison
-            if let actualCadence = viewModel.actualCadence {
-                VStack(spacing: 4) {
-                    Text("ACTUAL CADENCE")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: 12) {
-                        Text("\(Int(actualCadence)) spm")
-                            .font(.system(size: 20, weight: .semibold, design: .rounded))
-
-                        Text(viewModel.cadenceComparison)
-                            .font(.system(size: 16, weight: .medium, design: .rounded))
-                            .foregroundColor(actualCadenceColor)
-                    }
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Actual cadence: \(Int(actualCadence)) steps per minute, \(viewModel.cadenceComparison)")
-            }
-
-            Spacer()
-
-            // Current pace display
-            VStack(spacing: 4) {
-                Text("CURRENT PACE")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Text(viewModel.displayPace)
-                    .font(.system(size: 32, weight: .semibold, design: .rounded))
-                    .foregroundColor(.primary)
-            }
-            .padding(.bottom, 20)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Current pace: \(viewModel.displayPace) per \(viewModel.speedUnit == .mph ? "mile" : "kilometer")")
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 48)
+            .background(Color(.systemBackground))
+            .cornerRadius(20)
+            .shadow(color: Color.black.opacity(0.05), radius: 12, y: 4)
 
             // Play/Pause button
             playPauseButton
-                .padding(.bottom, 30)
+
+            // Actual cadence comparison
+            if let actualCadence = viewModel.actualCadence {
+                HStack(spacing: 20) {
+                    VStack(spacing: 4) {
+                        Text("Actual")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+
+                        Text("\(Int(actualCadence))")
+                            .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(spacing: 4) {
+                        Text("Difference")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+
+                        Text(viewModel.cadenceComparison)
+                            .font(.system(size: 28, weight: .semibold, design: .rounded))
+                            .foregroundColor(actualCadenceColor)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(16)
+                .shadow(color: Color.black.opacity(0.05), radius: 8, y: 2)
+            }
+
+            // Current pace display
+            VStack(spacing: 8) {
+                Text("Current Pace")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+
+                Text(viewModel.displayPace)
+                    .font(.system(size: 36, weight: .semibold, design: .rounded))
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.05), radius: 8, y: 2)
         }
-        .padding()
     }
 
     private var actualCadenceColor: Color {
@@ -135,95 +143,85 @@ struct RunView: View {
                 viewModel.resumeRun()
             }
         }) {
-            Image(systemName: viewModel.isRunning ? "pause.circle.fill" : "play.circle.fill")
-                .font(.system(size: 64))
-                .foregroundColor(.accentColor)
+            HStack(spacing: 12) {
+                Image(systemName: viewModel.isRunning ? "pause.fill" : "play.fill")
+                    .font(.title2)
+                Text(viewModel.isRunning ? "Pause" : "Resume")
+                    .font(.headline)
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(viewModel.isRunning ? Color.orange : Color.accentColor)
+            .cornerRadius(12)
         }
-        .accessibilityLabel(viewModel.isRunning ? "Pause metronome" : "Resume metronome")
     }
 
     // MARK: - Controls Section
 
     private var controlsSection: some View {
-        VStack(spacing: 16) {
-            // Pace source toggle
-            paceSourceToggle
-
-            Divider()
-
-            // Speed controls (only for manual mode)
-            if viewModel.paceSource == .manual {
-                speedControls
-                Divider()
-            }
+        VStack(spacing: 20) {
+            // Speed controls
+            speedControls
 
             // Settings toggles
             settingsToggles
         }
     }
 
-    private var paceSourceToggle: some View {
-        HStack {
-            Label("Follow GPS Pace", systemImage: "location.fill")
-                .font(.subheadline)
-                .foregroundColor(.primary)
-
-            Spacer()
-
-            Toggle("", isOn: Binding(
-                get: { viewModel.paceSource == .gps },
-                set: { _ in viewModel.togglePaceSource() }
-            ))
-            .labelsHidden()
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Follow GPS pace: \(viewModel.paceSource == .gps ? "on" : "off")")
-    }
-
     private var speedControls: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Target Speed")
-                    .font(.subheadline)
+        VStack(spacing: 16) {
+            VStack(spacing: 4) {
+                Text("Target Pace")
+                    .font(.caption)
                     .foregroundColor(.secondary)
+                    .textCase(.uppercase)
 
-                Spacer()
-
-                Text(String(format: "%.1f %@", viewModel.targetSpeedValue, viewModel.speedUnit.rawValue))
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                Text(String(format: "%d:%02d %@",
+                           Int(viewModel.targetPaceMinutes),
+                           Int(viewModel.targetPaceSeconds),
+                           viewModel.paceUnit.rawValue))
+                    .font(.system(size: 24, weight: .semibold, design: .rounded))
             }
 
-            HStack(spacing: 16) {
-                Button(action: viewModel.decreaseSpeed) {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundColor(.accentColor)
-                }
-                .accessibilityLabel("Decrease speed")
-
-                Slider(value: $viewModel.targetSpeedValue, in: 1.0...15.0, step: 0.5)
-                    .onChange(of: viewModel.targetSpeedValue) { _ in
-                        viewModel.onSpeedChanged()
+            HStack(spacing: 12) {
+                Button(action: viewModel.decreasePace) {
+                    HStack {
+                        Image(systemName: "minus")
+                        Text("15s")
                     }
-                    .accessibilityLabel("Speed slider")
-
-                Button(action: viewModel.increaseSpeed) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 32))
-                        .foregroundColor(.accentColor)
+                    .font(.headline)
+                    .foregroundColor(.accentColor)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
                 }
-                .accessibilityLabel("Increase speed")
+
+                Button(action: viewModel.increasePace) {
+                    HStack {
+                        Image(systemName: "plus")
+                        Text("15s")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.accentColor)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                }
             }
         }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(16)
     }
 
     private var settingsToggles: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 0) {
             // Cue mode
             HStack {
                 Text("Cue Mode")
-                    .font(.subheadline)
 
                 Spacer()
 
@@ -237,13 +235,14 @@ struct RunView: View {
                     viewModel.onCueModeChanged(newMode)
                 }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Cue mode: \(viewModel.cueMode.rawValue)")
+            .padding()
+
+            Divider()
+                .padding(.leading)
 
             // Sound set
             HStack {
                 Text("Sound")
-                    .font(.subheadline)
 
                 Spacer()
 
@@ -257,13 +256,14 @@ struct RunView: View {
                     viewModel.onSoundSetChanged(newSound)
                 }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Sound: \(viewModel.soundSet.rawValue)")
+            .padding()
+
+            Divider()
+                .padding(.leading)
 
             // Haptics toggle
             HStack {
                 Text("Haptic Cues")
-                    .font(.subheadline)
 
                 Spacer()
 
@@ -273,9 +273,10 @@ struct RunView: View {
                         viewModel.onHapticsChanged(newValue)
                     }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Haptic cues: \(viewModel.enableHaptics ? "enabled" : "disabled")")
+            .padding()
         }
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(16)
     }
 }
 
@@ -286,13 +287,13 @@ struct RunView: View {
         RunView(
             viewModel: RunViewModel(
                 biometric: Biometric(heightMeters: 1.75, weightKg: 70),
-                targetSpeedValue: 6.0,
-                speedUnit: .mph,
+                targetPaceMinutes: 10.0,
+                targetPaceSeconds: 0.0,
+                paceUnit: .minPerMi,
                 cueMode: .everyStep,
                 soundSet: .click,
                 enableHaptics: false,
                 personalizationDelta: 0,
-                locationService: MockLocationService(),
                 motionService: MockMotionService()
             )
         )

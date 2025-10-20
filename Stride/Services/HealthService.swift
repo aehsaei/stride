@@ -2,6 +2,7 @@ import Foundation
 import HealthKit
 
 /// Protocol for HealthKit services (enables mocking)
+@MainActor
 protocol HealthServiceProtocol {
     var isAvailable: Bool { get }
     func requestPermission() async throws
@@ -55,19 +56,11 @@ class HealthService: HealthServiceProtocol {
         guard let sample = samples.first else { return nil }
 
         // Return weight in kilograms
-        return sample.quantity.doubleValue(for: .gramUnit(withPrefix: .kilo))
+        return sample.quantity.doubleValue(for: .gramUnit(with: .kilo))
     }
 
     private func querySample(for type: HKQuantityType) async throws -> [HKQuantitySample] {
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-        let query = HKSampleQuery(
-            sampleType: type,
-            predicate: nil,
-            limit: 1,
-            sortDescriptors: [sortDescriptor]
-        ) { _, samples, error in
-            // Completion handled via continuation
-        }
 
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKSampleQuery(

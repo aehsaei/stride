@@ -2,14 +2,32 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Cadence Coach uses your location to track your running pace and adjust the metronome cadence in real time based on your current speed.</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.stride.app</string>
+
+    <key>CFBundleName</key>
+    <string>Stride</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>Stride</string>
+
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
 
     <key>NSMotionUsageDescription</key>
-    <string>Cadence Coach uses motion data to measure your actual running cadence (steps per minute) and compare it to your target cadence.</string>
+    <string>Stride uses motion data to measure your actual running cadence (steps per minute) and compare it to your target cadence.</string>
 
     <key>NSHealthShareUsageDescription</key>
-    <string>Cadence Coach can read your height and weight from HealthKit to provide more accurate cadence recommendations.</string>
+    <string>Stride can read your height and weight from HealthKit to provide more accurate cadence recommendations.</string>
 
     <key>UIBackgroundModes</key>
     <array>
